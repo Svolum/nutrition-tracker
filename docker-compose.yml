@@ -9,6 +9,8 @@ services:
       - .env
     ports:
       - "${APP_PORT:-8000}:8000"
+    volumes:
+      - ./app:/code/app
 
 # Если ваша БД крутится в отдельной Docker-сети (например, backend_net) и не проброшена на хост,
 # раскомментируйте блок ниже и добавьте networks: [existing_db_net] в сервис nutrition-app:

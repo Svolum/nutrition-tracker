@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
-from sqlalchemy import select
+from typing import Literal
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain import (
@@ -11,8 +13,10 @@ from app.domain import (
     NutritionDomainService,
     quantize_dec,
 )
-from app.models import DailyLogEntry, Product, ProductUnit, UserProfile
+from app.models import DailyLogEntry, DailyMacroFact, Product, ProductUnit, UserProfile
 from app.schemas import (
+    DailyFactRead,
+    DailyFactUpsert,
     DailyPotResponse,
     LogEntryCreate,
     LogEntryRead,
@@ -145,7 +149,6 @@ INITIAL_PRODUCTS: list[dict] = [
 
 
 async def seed_initial_data(session: AsyncSession) -> None:
-    """Идемпотентное заполнение справочника продуктов и профиля по умолчанию."""
     existing_product = await session.scalar(select(Product.id).limit(1))
     if existing_product is None:
         for item in INITIAL_PRODUCTS:
@@ -297,6 +300,39 @@ class NutritionRepository:
         await self.session.commit()
         return True
 
+    async def upsert_daily_fact(self, payload: DailyFactUpsert) -> None:
+        """Атомарный UPSERT прямого факта БЖУК за день через ON CONFLICT DO UPDATE."""
+        resolved_cal = payload.resolve_declared_calories()
+        values = {
+            "log_date": payload.log_date,
+            "declared_calories": resolved_cal,
+            "proteins": quantize_dec(payload.proteins),
+            "fats": quantize_dec(payload.fats),
+            "carbs": quantize_dec(payload.carbs),
+            "fiber": quantize_dec(payload.fiber),
+            "combine_with_products": payload.combine_with_products,
+        }
+        stmt = pg_insert(DailyMacroFact).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[DailyMacroFact.log_date],
+            set_={
+                "declared_calories": stmt.excluded.declared_calories,
+                "proteins": stmt.excluded.proteins,
+                "fats": stmt.excluded.fats,
+                "carbs": stmt.excluded.carbs,
+                "fiber": stmt.excluded.fiber,
+                "combine_with_products": stmt.excluded.combine_with_products,
+            },
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()
+
+    async def delete_daily_fact(self, target_date: date) -> bool:
+        stmt = delete(DailyMacroFact).where(DailyMacroFact.log_date == target_date)
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return (result.rowcount or 0) > 0
+
     async def get_daily_pot(self, target_date: date) -> DailyPotResponse:
         stmt = (
             select(DailyLogEntry)
@@ -306,7 +342,7 @@ class NutritionRepository:
         entries = list((await self.session.scalars(stmt)).all())
 
         entry_dtos: list[LogEntryRead] = []
-        breakdowns: list[MacroBreakdown] = []
+        product_breakdowns: list[MacroBreakdown] = []
 
         for e in entries:
             p = e.product
@@ -318,7 +354,7 @@ class NutritionRepository:
                 fiber_100g=p.fiber_100g,
                 grams=e.total_grams,
             )
-            breakdowns.append(b)
+            product_breakdowns.append(b)
             entry_dtos.append(
                 LogEntryRead(
                     id=e.id,
@@ -340,11 +376,55 @@ class NutritionRepository:
                 )
             )
 
-        agg = NutritionDomainService.aggregate_macros(breakdowns)
+        fact_row = await self.session.scalar(
+            select(DailyMacroFact).where(DailyMacroFact.log_date == target_date)
+        )
+
+        daily_fact_dto: DailyFactRead | None = None
+        calculation_mode: Literal["products_only", "fact_only", "fact_plus_products"] = "products_only"
+
+        if fact_row is not None:
+            fact_atwater = NutritionDomainService.calculate_atwater_calories(
+                fact_row.proteins, fact_row.fats, fact_row.carbs
+            )
+            fact_delta = quantize_dec(fact_row.declared_calories - fact_atwater)
+            fact_breakdown = MacroBreakdown(
+                declared_calories=fact_row.declared_calories,
+                atwater_calories=fact_atwater,
+                calorie_delta=fact_delta,
+                proteins=fact_row.proteins,
+                fats=fact_row.fats,
+                carbs=fact_row.carbs,
+                fiber=fact_row.fiber,
+            )
+            daily_fact_dto = DailyFactRead(
+                log_date=fact_row.log_date,
+                combine_with_products=fact_row.combine_with_products,
+                macros=MacroSummaryDTO(
+                    declared_calories=fact_breakdown.declared_calories,
+                    atwater_calories=fact_breakdown.atwater_calories,
+                    calorie_delta=fact_breakdown.calorie_delta,
+                    proteins=fact_breakdown.proteins,
+                    fats=fact_breakdown.fats,
+                    carbs=fact_breakdown.carbs,
+                    fiber=fact_breakdown.fiber,
+                ),
+            )
+            if fact_row.combine_with_products:
+                calculation_mode = "fact_plus_products"
+                agg = NutritionDomainService.aggregate_macros([fact_breakdown, *product_breakdowns])
+            else:
+                calculation_mode = "fact_only"
+                agg = fact_breakdown
+        else:
+            agg = NutritionDomainService.aggregate_macros(product_breakdowns)
+
         targets = await self.get_profile_dto()
 
         return DailyPotResponse(
             log_date=target_date,
+            calculation_mode=calculation_mode,
+            daily_fact=daily_fact_dto,
             entries=entry_dtos,
             totals=MacroSummaryDTO(
                 declared_calories=agg.declared_calories,

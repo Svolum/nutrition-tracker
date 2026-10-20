@@ -21,7 +21,10 @@ class Product(Base):
     __tablename__ = "products"
     __table_args__ = (
         CheckConstraint("calories_100g >= 0 AND calories_100g <= 900", name="chk_cal_range"),
-        CheckConstraint("proteins_100g >= 0 AND fats_100g >= 0 AND carbs_100g >= 0 AND fiber_100g >= 0", name="chk_macros_non_negative"),
+        CheckConstraint(
+            "proteins_100g >= 0 AND fats_100g >= 0 AND carbs_100g >= 0 AND fiber_100g >= 0",
+            name="chk_macros_non_negative",
+        ),
         CheckConstraint(
             "proteins_100g + fats_100g + carbs_100g + fiber_100g <= 100.00",
             name="chk_dry_matter_limit",
@@ -34,7 +37,9 @@ class Product(Base):
     proteins_100g: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     fats_100g: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     carbs_100g: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    fiber_100g: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    fiber_100g: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=Decimal("0.00")
+    )
 
     units: Mapped[list["ProductUnit"]] = relationship(
         "ProductUnit",
@@ -45,8 +50,6 @@ class Product(Base):
 
 
 class ProductUnit(Base):
-    """Штучные или кастомные меры веса для продукта (например, 'Пачка 300 г', 'Стакан', 'Штука')."""
-
     __tablename__ = "product_units"
     __table_args__ = (
         CheckConstraint("grams_per_unit > 0 AND grams_per_unit <= 10000", name="chk_unit_grams_positive"),
@@ -64,8 +67,6 @@ class ProductUnit(Base):
 
 
 class UserProfile(Base):
-    """Профиль пользователя с антропометрией и возможностью ручного переопределения лимитов."""
-
     __tablename__ = "user_profiles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
@@ -85,8 +86,6 @@ class UserProfile(Base):
 
 
 class DailyLogEntry(Base):
-    """Запись в общем дневном котле за конкретную дату."""
-
     __tablename__ = "daily_log_entries"
     __table_args__ = (
         CheckConstraint("quantity > 0 AND quantity <= 10000", name="chk_quantity_positive"),
@@ -106,3 +105,38 @@ class DailyLogEntry(Base):
     )
 
     product: Mapped["Product"] = relationship("Product", lazy="joined")
+
+
+class DailyMacroFact(Base):
+    """Прямой ввод фактических БЖУК (и опционально ккал) за день без подсчета продуктов."""
+
+    __tablename__ = "daily_macro_facts"
+    __table_args__ = (
+        UniqueConstraint("log_date", name="uq_daily_macro_fact_date"),
+        CheckConstraint(
+            "declared_calories >= 0 AND declared_calories <= 30000",
+            name="chk_fact_cal_range",
+        ),
+        CheckConstraint(
+            "proteins >= 0 AND proteins <= 3000 AND "
+            "fats >= 0 AND fats <= 3000 AND "
+            "carbs >= 0 AND carbs <= 5000 AND "
+            "fiber >= 0 AND fiber <= 1000",
+            name="chk_fact_macros_range",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    log_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    declared_calories: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    proteins: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    fats: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    carbs: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    fiber: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    combine_with_products: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

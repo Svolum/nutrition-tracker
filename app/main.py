@@ -7,9 +7,10 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, s
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal, Base, engine, get_db
+from app.database import AsyncSessionLocal, engine, get_db, init_db_with_retry
 from app.repositories import NutritionRepository, seed_initial_data
 from app.schemas import (
+    DailyFactUpsert,
     DailyPotResponse,
     LogEntryCreate,
     ProductCreate,
@@ -23,8 +24,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await init_db_with_retry()
     async with AsyncSessionLocal() as session:
         await seed_initial_data(session)
     yield
@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Daily Nutrition & Macro Calculator API",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -98,6 +98,24 @@ async def get_daily_pot(
     repo: Annotated[NutritionRepository, Depends(get_repo)],
     log_date: Annotated[date, Query(description="Дата дневного котла (YYYY-MM-DD)")] = date.today(),
 ) -> DailyPotResponse:
+    return await repo.get_daily_pot(log_date)
+
+
+@app.put("/api/daily-pot/fact", response_model=DailyPotResponse)
+async def upsert_daily_macro_fact(
+    payload: DailyFactUpsert,
+    repo: Annotated[NutritionRepository, Depends(get_repo)],
+) -> DailyPotResponse:
+    await repo.upsert_daily_fact(payload)
+    return await repo.get_daily_pot(payload.log_date)
+
+
+@app.delete("/api/daily-pot/fact", response_model=DailyPotResponse)
+async def delete_daily_macro_fact(
+    repo: Annotated[NutritionRepository, Depends(get_repo)],
+    log_date: Annotated[date, Query(description="Дата дневного котла (YYYY-MM-DD)")] = date.today(),
+) -> DailyPotResponse:
+    await repo.delete_daily_fact(log_date)
     return await repo.get_daily_pot(log_date)
 
 

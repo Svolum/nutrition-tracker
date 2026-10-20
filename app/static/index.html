@@ -43,9 +43,31 @@
       margin-bottom: 20px;
     }
     h1, h2, h3 { margin-top: 0; }
-    h2 { font-size: 1.15rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h2 {
+      font-size: 1.12rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      font-size: 0.76rem;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-weight: 500;
+    }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    @media (max-width: 640px) {
+      .grid-5 { grid-template-columns: 1fr 1fr; }
+    }
     label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 4px; }
     input, select, button {
       width: 100%;
@@ -73,6 +95,11 @@
       padding: 4px 10px;
       margin: 0;
     }
+    button.secondary-danger {
+      background: transparent;
+      border: 1px solid var(--danger);
+      color: var(--danger);
+    }
     .macro-bars { display: grid; gap: 12px; margin-top: 12px; }
     .macro-item { background: #0b1120; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); }
     .macro-header { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 6px; }
@@ -90,6 +117,9 @@
       padding: 10px 14px;
       border-radius: 8px;
       margin-bottom: 16px;
+      max-width: 1240px;
+      margin-left: auto;
+      margin-right: auto;
     }
     .preview-box {
       margin-top: 10px;
@@ -203,15 +233,64 @@
       </div>
     </div>
 
-    <!-- Правая колонка: Общий дневной котел -->
+    <!-- Правая колонка: Сводка, Прямой факт за день и Котел продуктов -->
     <div>
       <div class="card">
-        <h2>3. Сводка дневного котла</h2>
+        <h2>
+          <span>3. Сводка дневного рациона</span>
+          <span id="calcModeBadge" class="badge">Режим: Сумма продуктов</span>
+        </h2>
         <div id="macroSummary" class="macro-bars"></div>
       </div>
 
       <div class="card">
-        <h2>4. Добавить продукт в общий дневной котел</h2>
+        <h2>4. Прямой ввод факта за день (БЖУК без подсчета продуктов)</h2>
+        <form id="directFactForm">
+          <div class="grid-5">
+            <div>
+              <label>Белки (г)</label>
+              <input type="number" id="fact_p" step="0.1" min="0" max="3000" placeholder="150" required />
+            </div>
+            <div>
+              <label>Жиры (г)</label>
+              <input type="number" id="fact_f" step="0.1" min="0" max="3000" placeholder="80" required />
+            </div>
+            <div>
+              <label>Углеводы (г)</label>
+              <input type="number" id="fact_c" step="0.1" min="0" max="5000" placeholder="250" required />
+            </div>
+            <div>
+              <label>Клетчатка (г)</label>
+              <input type="number" id="fact_fib" step="0.1" min="0" max="1000" value="0" required />
+            </div>
+            <div>
+              <label>Ккал (необяз.)</label>
+              <input type="number" id="fact_cal" step="0.1" min="0" max="30000" placeholder="Авто по БЖУ" />
+            </div>
+          </div>
+
+          <div style="margin-top:10px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text);">
+              <input type="checkbox" id="fact_combine" style="width:auto;" />
+              Суммировать этот факт с продуктами из списка ниже (если выключено — берется строго факт за день)
+            </label>
+          </div>
+
+          <div id="factLivePreview" class="preview-box">
+            Введите фактические БЖУК за день. Если поле «Ккал» оставить пустым, калорийность посчитается автоматически по формуле Атвотера (4×Б + 9×Ж + 4×У).
+          </div>
+
+          <div class="grid-2" id="factActionsGrid">
+            <button type="submit">Записать факт за день</button>
+            <button type="button" id="clearFactBtn" class="secondary-danger" style="display:none;">
+              Сбросить прямой факт (вернуться к продуктам)
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>5. Добавить продукт в общий дневной котел</h2>
         <form id="addEntryForm">
           <div class="grid-3">
             <div>
@@ -231,7 +310,7 @@
           <button type="submit">Добавить в дневной котел</button>
         </form>
 
-        <h3 style="margin-top:22px;font-size:1rem;">Записи за выбранный день</h3>
+        <h3 style="margin-top:22px;font-size:1rem;">Записи продуктов за выбранный день</h3>
         <table>
           <thead>
             <tr>
@@ -278,6 +357,24 @@
         throw new Error(detail);
       }
       return data;
+    }
+
+    function updateFactPreview() {
+      const p = parseFloat(document.getElementById('fact_p').value) || 0;
+      const f = parseFloat(document.getElementById('fact_f').value) || 0;
+      const c = parseFloat(document.getElementById('fact_c').value) || 0;
+      const fib = parseFloat(document.getElementById('fact_fib').value) || 0;
+      const calRaw = document.getElementById('fact_cal').value.trim();
+      const preview = document.getElementById('factLivePreview');
+
+      const atwater = (p * 4 + f * 9 + c * 4).toFixed(2);
+      const declared = calRaw !== '' ? parseFloat(calRaw).toFixed(2) : atwater;
+      const delta = (declared - atwater).toFixed(2);
+      const deltaSign = Number(delta) >= 0 ? '+' : '';
+
+      preview.textContent =
+        `Предпросмотр факта: Ккал = ${declared} (по БЖУ Атвотера: ${atwater} ккал, Δ ${deltaSign}${delta}) | ` +
+        `Б: ${p.toFixed(1)} г | Ж: ${f.toFixed(1)} г | У: ${c.toFixed(1)} г | Клетчатка: ${fib.toFixed(1)} г`;
     }
 
     function updateUnitSelect() {
@@ -367,7 +464,44 @@
       return wrap;
     }
 
+    function fillFactForm(dailyFact) {
+      const clearBtn = document.getElementById('clearFactBtn');
+      if (!dailyFact) {
+        document.getElementById('fact_p').value = '';
+        document.getElementById('fact_f').value = '';
+        document.getElementById('fact_c').value = '';
+        document.getElementById('fact_fib').value = '0';
+        document.getElementById('fact_cal').value = '';
+        document.getElementById('fact_combine').checked = false;
+        clearBtn.style.display = 'none';
+        document.getElementById('factLivePreview').textContent =
+          'Прямой факт за выбранный день не задан. Итоги считаются по списку продуктов.';
+        return;
+      }
+
+      const m = dailyFact.macros;
+      document.getElementById('fact_p').value = m.proteins;
+      document.getElementById('fact_f').value = m.fats;
+      document.getElementById('fact_c').value = m.carbs;
+      document.getElementById('fact_fib').value = m.fiber;
+      document.getElementById('fact_cal').value = m.declared_calories;
+      document.getElementById('fact_combine').checked = dailyFact.combine_with_products;
+      clearBtn.style.display = 'block';
+      updateFactPreview();
+    }
+
     function renderPot(pot) {
+      const badge = document.getElementById('calcModeBadge');
+      if (pot.calculation_mode === 'fact_only') {
+        badge.textContent = 'Режим: Строго прямой факт за день';
+      } else if (pot.calculation_mode === 'fact_plus_products') {
+        badge.textContent = 'Режим: Прямой факт + продукты';
+      } else {
+        badge.textContent = 'Режим: Сумма продуктов';
+      }
+
+      fillFactForm(pot.daily_fact);
+
       const summary = document.getElementById('macroSummary');
       summary.replaceChildren();
 
@@ -376,10 +510,10 @@
       const deltaSign = Number(t.calorie_delta) >= 0 ? '+' : '';
       const calNote =
         `По формуле Атвотера (4×Б + 9×Ж + 4×У): ${t.atwater_calories} ккал ` +
-        `(Δ c паспортными ккал: ${deltaSign}${t.calorie_delta} ккал) | Остаток: ${pot.remaining_declared_calories} ккал`;
+        `(Δ c введенными ккал: ${deltaSign}${t.calorie_delta} ккал) | Остаток: ${pot.remaining_declared_calories} ккал`;
 
       summary.append(
-        renderProgressItem('Калории (строго по введенным)', Number(t.declared_calories), Number(trg.active_target_calories), 'ккал', calNote),
+        renderProgressItem('Калории', Number(t.declared_calories), Number(trg.active_target_calories), 'ккал', calNote),
         renderProgressItem('Белки', Number(t.proteins), Number(trg.active_target_proteins), 'г', `Осталось: ${pot.remaining_proteins} г`),
         renderProgressItem('Жиры', Number(t.fats), Number(trg.active_target_fats), 'г', `Осталось: ${pot.remaining_fats} г`),
         renderProgressItem('Углеводы', Number(t.carbs), Number(trg.active_target_carbs), 'г', `Осталось: ${pot.remaining_carbs} г`),
@@ -470,6 +604,44 @@
 
     document.getElementById('use_manual_targets').addEventListener('change', (e) => {
       document.getElementById('manualFields').style.display = e.target.checked ? 'grid' : 'none';
+    });
+
+    ['fact_p', 'fact_f', 'fact_c', 'fact_fib', 'fact_cal'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', updateFactPreview);
+    });
+
+    document.getElementById('directFactForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const calRaw = document.getElementById('fact_cal').value.trim();
+        const updatedPot = await apiFetch('/api/daily-pot/fact', {
+          method: 'PUT',
+          body: JSON.stringify({
+            log_date: potDateInput.value,
+            proteins: document.getElementById('fact_p').value,
+            fats: document.getElementById('fact_f').value,
+            carbs: document.getElementById('fact_c').value,
+            fiber: document.getElementById('fact_fib').value,
+            declared_calories: calRaw === '' ? null : calRaw,
+            combine_with_products: document.getElementById('fact_combine').checked,
+          }),
+        });
+        renderPot(updatedPot);
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    document.getElementById('clearFactBtn').addEventListener('click', async () => {
+      try {
+        const updatedPot = await apiFetch(
+          `/api/daily-pot/fact?log_date=${encodeURIComponent(potDateInput.value)}`,
+          { method: 'DELETE' }
+        );
+        renderPot(updatedPot);
+      } catch (err) {
+        showError(err.message);
+      }
     });
 
     document.getElementById('entry_product').addEventListener('change', updateUnitSelect);

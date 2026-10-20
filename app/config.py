@@ -3,8 +3,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@host.docker.internal:5432/nutrition_db"
+        "postgresql+asyncpg://root:root@host.docker.internal:5432/nutrition_db"
     )
+    db_ssl: bool = False
     app_host: str = "0.0.0.0"
     app_port: int = 8000
 
