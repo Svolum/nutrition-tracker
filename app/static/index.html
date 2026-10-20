@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Калькулятор дневного рациона и БЖУ</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --success: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1.6fr;
+      gap: 20px;
+    }
+    @media (max-width: 960px) {
+      .container { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+    h1, h2, h3 { margin-top: 0; }
+    h2 { font-size: 1.15rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 4px; }
+    input, select, button {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0b1120;
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+    button {
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      margin-top: 10px;
+    }
+    button:hover { opacity: 0.92; }
+    button.danger {
+      background: transparent;
+      border: 1px solid var(--danger);
+      color: var(--danger);
+      width: auto;
+      padding: 4px 10px;
+      margin: 0;
+    }
+    .macro-bars { display: grid; gap: 12px; margin-top: 12px; }
+    .macro-item { background: #0b1120; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); }
+    .macro-header { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 6px; }
+    .progress-track { height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); transition: width 0.2s ease; }
+    .sub-note { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    .error-banner {
+      display: none;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--danger);
+      color: #fca5a5;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .preview-box {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 6px;
+      background: #0b1120;
+      border: 1px dashed var(--border);
+      font-size: 0.84rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div style="max-width:1240px;margin:0 auto 14px auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <h1 style="margin:0;font-size:1.45rem;">Калькулятор дневного рациона и макронутриентов</h1>
+    <div>
+      <label for="potDate" style="display:inline;margin-right:6px;">Дата котла:</label>
+      <input type="date" id="potDate" style="width:auto;" />
+    </div>
+  </div>
+
+  <div id="errorBox" class="error-banner"></div>
+
+  <div class="container">
+    <!-- Левая колонка: Настройки нормы и Справочник -->
+    <div>
+      <div class="card">
+        <h2>1. Дневная норма (Рекомендованная / Вручную)</h2>
+        <form id="profileForm">
+          <div class="grid-2">
+            <div>
+              <label>Пол</label>
+              <select id="gender">
+                <option value="male">Мужской</option>
+                <option value="female">Женский</option>
+              </select>
+            </div>
+            <div>
+              <label>Возраст (лет)</label>
+              <input type="number" id="age" min="10" max="120" required />
+            </div>
+            <div>
+              <label>Вес (кг)</label>
+              <input type="number" id="weight_kg" step="0.1" min="25" max="300" required />
+            </div>
+            <div>
+              <label>Рост (см)</label>
+              <input type="number" id="height_cm" step="0.5" min="100" max="250" required />
+            </div>
+            <div>
+              <label>Активность</label>
+              <select id="activity_level">
+                <option value="sedentary">Сидячий (x1.2)</option>
+                <option value="light">Легкая (x1.375)</option>
+                <option value="moderate">Средняя (x1.55)</option>
+                <option value="high">Высокая (x1.725)</option>
+                <option value="extreme">Экстремальная (x1.9)</option>
+              </select>
+            </div>
+            <div>
+              <label>Цель</label>
+              <select id="goal">
+                <option value="deficit">Дефицит (-15%)</option>
+                <option value="maintenance">Поддержание (100%)</option>
+                <option value="surplus">Профицит (+15%)</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="bmrInfo" class="sub-note" style="margin:10px 0;"></div>
+
+          <div style="margin:10px 0;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text);">
+              <input type="checkbox" id="use_manual_targets" style="width:auto;" />
+              Задать целевые КБЖУ и клетчатку вручную
+            </label>
+          </div>
+
+          <div id="manualFields" class="grid-3" style="display:none;">
+            <div><label>Ккал</label><input type="number" id="manual_calories" step="1" min="500" max="15000" /></div>
+            <div><label>Белки (г)</label><input type="number" id="manual_proteins" step="0.5" min="0" max="1000" /></div>
+            <div><label>Жиры (г)</label><input type="number" id="manual_fats" step="0.5" min="0" max="1000" /></div>
+            <div><label>Углеводы (г)</label><input type="number" id="manual_carbs" step="0.5" min="0" max="2000" /></div>
+            <div><label>Клетчатка (г)</label><input type="number" id="manual_fiber" step="0.5" min="0" max="300" /></div>
+          </div>
+
+          <button type="submit">Сохранить параметры нормы</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>2. Добавить новый продукт в локальный справочник</h2>
+        <form id="productForm">
+          <div style="margin-bottom:8px;">
+            <label>Название продукта</label>
+            <input type="text" id="prod_name" placeholder="Напр.: Творог 5%" required />
+          </div>
+          <div class="grid-3">
+            <div><label>Ккал (на 100 г)</label><input type="number" id="prod_cal" step="0.01" min="0" max="900" required /></div>
+            <div><label>Белки (г/100г)</label><input type="number" id="prod_p" step="0.01" min="0" max="100" required /></div>
+            <div><label>Жиры (г/100г)</label><input type="number" id="prod_f" step="0.01" min="0" max="100" required /></div>
+            <div><label>Углеводы (г/100г)</label><input type="number" id="prod_c" step="0.01" min="0" max="100" required /></div>
+            <div><label>Клетчатка (г/100г)</label><input type="number" id="prod_fib" step="0.01" min="0" max="100" value="0" required /></div>
+          </div>
+          <div class="grid-2" style="margin-top:8px;">
+            <div><label>Кастомная мера (опционально)</label><input type="text" id="prod_unit_name" placeholder="Пачка (200 г)" /></div>
+            <div><label>Вес меры в граммах</label><input type="number" id="prod_unit_grams" step="0.1" min="0.1" max="5000" placeholder="200" /></div>
+          </div>
+          <button type="submit">Добавить в справочник</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Правая колонка: Общий дневной котел -->
+    <div>
+      <div class="card">
+        <h2>3. Сводка дневного котла</h2>
+        <div id="macroSummary" class="macro-bars"></div>
+      </div>
+
+      <div class="card">
+        <h2>4. Добавить продукт в общий дневной котел</h2>
+        <form id="addEntryForm">
+          <div class="grid-3">
+            <div>
+              <label>Продукт</label>
+              <select id="entry_product" required></select>
+            </div>
+            <div>
+              <label>Единица измерения</label>
+              <select id="entry_unit"></select>
+            </div>
+            <div>
+              <label>Количество</label>
+              <input type="number" id="entry_qty" step="0.1" min="0.1" max="10000" value="100" required />
+            </div>
+          </div>
+          <div id="livePreview" class="preview-box"></div>
+          <button type="submit">Добавить в дневной котел</button>
+        </form>
+
+        <h3 style="margin-top:22px;font-size:1rem;">Записи за выбранный день</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Продукт</th>
+              <th>Порция (г)</th>
+              <th>Ккал (введено / по БЖУ)</th>
+              <th>Б / Ж / У / Клетч. (г)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="entriesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let productsCache = [];
+    const potDateInput = document.getElementById('potDate');
+    potDateInput.value = new Date().toISOString().split('T')[0];
+
+    function showError(msg) {
+      const box = document.getElementById('errorBox');
+      if (!msg) {
+        box.style.display = 'none';
+        box.textContent = '';
+        return;
+      }
+      box.textContent = msg;
+      box.style.display = 'block';
+    }
+
+    async function apiFetch(url, options = {}) {
+      showError(null);
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = typeof data.detail === 'string'
+          ? data.detail
+          : JSON.stringify(data.detail || 'Ошибка запроса');
+        throw new Error(detail);
+      }
+      return data;
+    }
+
+    function updateUnitSelect() {
+      const prodId = Number(document.getElementById('entry_product').value);
+      const prod = productsCache.find(p => p.id === prodId);
+      const unitSelect = document.getElementById('entry_unit');
+      unitSelect.replaceChildren();
+
+      const gramOpt = document.createElement('option');
+      gramOpt.value = '';
+      gramOpt.textContent = 'Граммы (г)';
+      unitSelect.appendChild(gramOpt);
+
+      if (prod && prod.units) {
+        for (const u of prod.units) {
+          const opt = document.createElement('option');
+          opt.value = String(u.id);
+          opt.dataset.grams = String(u.grams_per_unit);
+          opt.textContent = `${u.unit_name} (${u.grams_per_unit} г)`;
+          unitSelect.appendChild(opt);
+        }
+      }
+      const qtyInput = document.getElementById('entry_qty');
+      qtyInput.value = unitSelect.value === '' ? '100' : '1';
+      updateLivePreview();
+    }
+
+    function updateLivePreview() {
+      const prodId = Number(document.getElementById('entry_product').value);
+      const prod = productsCache.find(p => p.id === prodId);
+      const unitSelect = document.getElementById('entry_unit');
+      const qty = parseFloat(document.getElementById('entry_qty').value) || 0;
+      const preview = document.getElementById('livePreview');
+
+      if (!prod || qty <= 0) {
+        preview.textContent = 'Укажите корректное количество для предпросмотра.';
+        return;
+      }
+
+      let grams = qty;
+      if (unitSelect.value !== '') {
+        const selectedOpt = unitSelect.options[unitSelect.selectedIndex];
+        grams = qty * parseFloat(selectedOpt.dataset.grams || '1');
+      }
+
+      const factor = grams / 100.0;
+      const decCal = (parseFloat(prod.calories_100g) * factor).toFixed(2);
+      const p = (parseFloat(prod.proteins_100g) * factor).toFixed(2);
+      const f = (parseFloat(prod.fats_100g) * factor).toFixed(2);
+      const c = (parseFloat(prod.carbs_100g) * factor).toFixed(2);
+      const fib = (parseFloat(prod.fiber_100g) * factor).toFixed(2);
+      const atwCal = (p * 4 + f * 9 + c * 4).toFixed(2);
+
+      preview.textContent =
+        `Предпросмотр (${grams.toFixed(1)} г): Заявлено ${decCal} ккал (по формуле БЖУ: ${atwCal} ккал) | ` +
+        `Б: ${p} г | Ж: ${f} г | У: ${c} г | Клетчатка: ${fib} г`;
+    }
+
+    function renderProgressItem(title, current, target, unit, extraNote = '') {
+      const wrap = document.createElement('div');
+      wrap.className = 'macro-item';
+
+      const header = document.createElement('div');
+      header.className = 'macro-header';
+      const left = document.createElement('strong');
+      left.textContent = title;
+      const right = document.createElement('span');
+      const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+      right.textContent = `${current} / ${target} ${unit} (${pct}%)`;
+      header.append(left, right);
+
+      const track = document.createElement('div');
+      track.className = 'progress-track';
+      const fill = document.createElement('div');
+      fill.className = 'progress-fill';
+      fill.style.width = `${pct}%`;
+      if (current > target * 1.05) fill.style.background = 'var(--warn)';
+      track.appendChild(fill);
+
+      wrap.append(header, track);
+      if (extraNote) {
+        const note = document.createElement('div');
+        note.className = 'sub-note';
+        note.textContent = extraNote;
+        wrap.appendChild(note);
+      }
+      return wrap;
+    }
+
+    function renderPot(pot) {
+      const summary = document.getElementById('macroSummary');
+      summary.replaceChildren();
+
+      const t = pot.totals;
+      const trg = pot.targets;
+      const deltaSign = Number(t.calorie_delta) >= 0 ? '+' : '';
+      const calNote =
+        `По формуле Атвотера (4×Б + 9×Ж + 4×У): ${t.atwater_calories} ккал ` +
+        `(Δ c паспортными ккал: ${deltaSign}${t.calorie_delta} ккал) | Остаток: ${pot.remaining_declared_calories} ккал`;
+
+      summary.append(
+        renderProgressItem('Калории (строго по введенным)', Number(t.declared_calories), Number(trg.active_target_calories), 'ккал', calNote),
+        renderProgressItem('Белки', Number(t.proteins), Number(trg.active_target_proteins), 'г', `Осталось: ${pot.remaining_proteins} г`),
+        renderProgressItem('Жиры', Number(t.fats), Number(trg.active_target_fats), 'г', `Осталось: ${pot.remaining_fats} г`),
+        renderProgressItem('Углеводы', Number(t.carbs), Number(trg.active_target_carbs), 'г', `Осталось: ${pot.remaining_carbs} г`),
+        renderProgressItem('Клетчатка', Number(t.fiber), Number(trg.active_target_fiber), 'г', `Осталось: ${pot.remaining_fiber} г`),
+      );
+
+      const tbody = document.getElementById('entriesBody');
+      tbody.replaceChildren();
+
+      for (const e of pot.entries) {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td');
+        tdName.textContent = e.product_name;
+
+        const tdPortion = document.createElement('td');
+        tdPortion.textContent = e.unit_label === 'г'
+          ? `${e.total_grams} г`
+          : `${e.quantity} × ${e.unit_label} (${e.total_grams} г)`;
+
+        const tdCal = document.createElement('td');
+        tdCal.textContent = `${e.macros.declared_calories} ккал (по БЖУ: ${e.macros.atwater_calories})`;
+
+        const tdMacros = document.createElement('td');
+        tdMacros.textContent = `${e.macros.proteins} / ${e.macros.fats} / ${e.macros.carbs} / ${e.macros.fiber}`;
+
+        const tdAct = document.createElement('td');
+        const delBtn = document.createElement('button');
+        delBtn.className = 'danger';
+        delBtn.textContent = 'Удалить';
+        delBtn.addEventListener('click', async () => {
+          try {
+            const updated = await apiFetch(
+              `/api/daily-pot/entries/${e.id}?log_date=${encodeURIComponent(potDateInput.value)}`,
+              { method: 'DELETE' }
+            );
+            renderPot(updated);
+          } catch (err) {
+            showError(err.message);
+          }
+        });
+        tdAct.appendChild(delBtn);
+
+        tr.append(tdName, tdPortion, tdCal, tdMacros, tdAct);
+        tbody.appendChild(tr);
+      }
+    }
+
+    function fillProfileForm(p) {
+      document.getElementById('gender').value = p.gender;
+      document.getElementById('age').value = p.age;
+      document.getElementById('weight_kg').value = p.weight_kg;
+      document.getElementById('height_cm').value = p.height_cm;
+      document.getElementById('activity_level').value = p.activity_level;
+      document.getElementById('goal').value = p.goal;
+      document.getElementById('use_manual_targets').checked = p.use_manual_targets;
+      document.getElementById('manual_calories').value = p.manual_calories;
+      document.getElementById('manual_proteins').value = p.manual_proteins;
+      document.getElementById('manual_fats').value = p.manual_fats;
+      document.getElementById('manual_carbs').value = p.manual_carbs;
+      document.getElementById('manual_fiber').value = p.manual_fiber;
+
+      document.getElementById('manualFields').style.display = p.use_manual_targets ? 'grid' : 'none';
+      document.getElementById('bmrInfo').textContent =
+        `Расчет по Миффлину — Сан-Жеору: BMR = ${p.recommended_bmr} ккал | TDEE = ${p.recommended_tdee} ккал`;
+    }
+
+    async function loadAll() {
+      try {
+        productsCache = await apiFetch('/api/products');
+        const prodSelect = document.getElementById('entry_product');
+        prodSelect.replaceChildren();
+        for (const p of productsCache) {
+          const opt = document.createElement('option');
+          opt.value = String(p.id);
+          opt.textContent = `${p.name} (${p.calories_100g} ккал / 100г)`;
+          prodSelect.appendChild(opt);
+        }
+        updateUnitSelect();
+
+        const pot = await apiFetch(`/api/daily-pot?log_date=${encodeURIComponent(potDateInput.value)}`);
+        fillProfileForm(pot.targets);
+        renderPot(pot);
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    document.getElementById('use_manual_targets').addEventListener('change', (e) => {
+      document.getElementById('manualFields').style.display = e.target.checked ? 'grid' : 'none';
+    });
+
+    document.getElementById('entry_product').addEventListener('change', updateUnitSelect);
+    document.getElementById('entry_unit').addEventListener('change', () => {
+      const unitSelect = document.getElementById('entry_unit');
+      document.getElementById('entry_qty').value = unitSelect.value === '' ? '100' : '1';
+      updateLivePreview();
+    });
+    document.getElementById('entry_qty').addEventListener('input', updateLivePreview);
+    potDateInput.addEventListener('change', loadAll);
+
+    document.getElementById('profileForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await apiFetch('/api/profile', {
+          method: 'PUT',
+          body: JSON.stringify({
+            gender: document.getElementById('gender').value,
+            age: Number(document.getElementById('age').value),
+            weight_kg: document.getElementById('weight_kg').value,
+            height_cm: document.getElementById('height_cm').value,
+            activity_level: document.getElementById('activity_level').value,
+            goal: document.getElementById('goal').value,
+            use_manual_targets: document.getElementById('use_manual_targets').checked,
+            manual_calories: document.getElementById('manual_calories').value,
+            manual_proteins: document.getElementById('manual_proteins').value,
+            manual_fats: document.getElementById('manual_fats').value,
+            manual_carbs: document.getElementById('manual_carbs').value,
+            manual_fiber: document.getElementById('manual_fiber').value,
+          }),
+        });
+        await loadAll();
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    document.getElementById('productForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const unitName = document.getElementById('prod_unit_name').value.trim();
+        const unitGrams = document.getElementById('prod_unit_grams').value;
+        const units = unitName && unitGrams
+          ? [{ unit_name: unitName, grams_per_unit: unitGrams }]
+          : [];
+
+        await apiFetch('/api/products', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: document.getElementById('prod_name').value,
+            calories_100g: document.getElementById('prod_cal').value,
+            proteins_100g: document.getElementById('prod_p').value,
+            fats_100g: document.getElementById('prod_f').value,
+            carbs_100g: document.getElementById('prod_c').value,
+            fiber_100g: document.getElementById('prod_fib').value,
+            units,
+          }),
+        });
+        e.target.reset();
+        document.getElementById('prod_fib').value = '0';
+        await loadAll();
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    document.getElementById('addEntryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const unitVal = document.getElementById('entry_unit').value;
+        const updatedPot = await apiFetch('/api/daily-pot/entries', {
+          method: 'POST',
+          body: JSON.stringify({
+            log_date: potDateInput.value,
+            product_id: Number(document.getElementById('entry_product').value),
+            unit_id: unitVal === '' ? null : Number(unitVal),
+            quantity: document.getElementById('entry_qty').value,
+          }),
+        });
+        renderPot(updatedPot);
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    loadAll();
+  </script>
+</body>
+</html>

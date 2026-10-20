@@ -1,0 +1,18 @@
+services:
+  nutrition-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nutrition-tracker-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+# Если ваша БД крутится в отдельной Docker-сети (например, backend_net) и не проброшена на хост,
+# раскомментируйте блок ниже и добавьте networks: [existing_db_net] в сервис nutrition-app:
+# networks:
+#   existing_db_net:
+#     external: true
+#     name: имя_вашей_docker_сети
